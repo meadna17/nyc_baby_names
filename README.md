@@ -44,6 +44,20 @@ It writes `output/ssa_spellings_by_year.png` (US births per year, by spelling) a
 `output/ssa_state_vs_us.png` (births per 100,000 girls, state vs. US), and prints peak year,
 rank, and babies per decade. SSA data has no ethnicity or city detail.
 
+## Explore any name (interactive page)
+
+```bash
+python build_explorer.py            # builds output/name_explorer.html from the cached SSA zips
+python build_explorer.py --state CA --default "Paulina|F,Manuel|M"
+```
+
+Open `output/name_explorer.html` in your browser (double-click it; it works offline). Type a name,
+pick it from the list (girls and boys are listed separately, e.g. "Regan (girls)" and "Regan (boys)"),
+and compare up to 8 names on two charts: the whole US and one state. Switch between babies per year
+and per 100,000 births, and between linear and log scale (log lets a very common name and a rare one
+share a chart). Hover or tap a chart for exact numbers. The address bar keeps your choices, so you
+can bookmark a comparison. `build_explorer.py` needs `explorer_template.html` beside it.
+
 ## Caveats
 
 - **No neighborhoods.** The dataset has only year, gender, ethnicity group, name, count, and rank.
