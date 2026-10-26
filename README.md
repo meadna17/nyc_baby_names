@@ -58,6 +58,18 @@ and per 100,000 births, and between linear and log scale (log lets a very common
 share a chart). Hover or tap a chart for exact numbers. The address bar keeps your choices, so you
 can bookmark a comparison. `build_explorer.py` needs `explorer_template.html` beside it.
 
+### Check the page against the official files
+
+```bash
+python verify_explorer.py                       # compares every number on the page with the SSA zips
+python verify_explorer.py --browser             # also clicks through the real page (needs: pip install playwright && playwright install chromium)
+python verify_explorer.py --expect "Susannah|F|1975|152"   # add your own hand-checked number
+```
+
+It reads the raw zips with its own parser, decodes the data back out of the HTML, and reports PASS/FAIL
+for counts, totals, per-100,000 denominators, girls/boys separation, the 100-birth cutoff, and whether the
+HTML is self-contained. Use `--html output/yourfile.html` if you renamed the page.
+
 ## Caveats
 
 - **No neighborhoods.** The dataset has only year, gender, ethnicity group, name, count, and rank.
