@@ -26,6 +26,24 @@ Options: `--name`, `--variants Susanna,Susana`, `--gender F|M|all`, `--csv file.
 
 Optional: get a free app token from NYC Open Data and `export NYC_APP_TOKEN=...` for higher rate limits.
 
+## Nationwide: Social Security data
+
+The NYC file hides names with few births in each ethnicity group and year, so a name like
+Susannah can vanish from it entirely. The Social Security Administration's
+[baby name files](https://www.ssa.gov/oact/babynames/limits.html) use a much lower cutoff
+(a name is left out only if it would reveal a count below 5 in an area), cover the whole US
+since 1880, and include a file per state.
+
+```bash
+python ssa_names.py                 # downloads the national + state zips, cached in data/ssa/
+python ssa_names.py --state NY      # compare any state with the country
+python ssa_names.py --national-zip names.zip --state-zip namesbystate.zip   # use zips you downloaded
+```
+
+It writes `output/ssa_spellings_by_year.png` (US births per year, by spelling) and
+`output/ssa_state_vs_us.png` (births per 100,000 girls, state vs. US), and prints peak year,
+rank, and babies per decade. SSA data has no ethnicity or city detail.
+
 ## Caveats
 
 - **No neighborhoods.** The dataset has only year, gender, ethnicity group, name, count, and rank.
