@@ -9,6 +9,7 @@ Socrata dataset id 25th-nujf), cleans it, and makes two charts plus a summary:
 
 Usage:
   python susannah_names.py                       # fetch live data from the API
+  python susannah_names.py --refresh             # ignore the cached download
   python susannah_names.py --csv names.csv       # use a CSV you downloaded
   python susannah_names.py --name Susannah --variants Susanna,Susana
   python susannah_names.py --gender all          # include boys' rows too
@@ -50,24 +51,38 @@ ETH_COLORS = dict(zip(ETH_ORDER, SERIES_COLORS))  # color follows the group, alw
 # --------------------------------------------------------------------------
 # Loading
 # --------------------------------------------------------------------------
-def fetch_from_api(names):
-    """Query the Socrata (SODA) API for just the names we care about."""
-    quoted = ",".join("'" + n.upper().replace("'", "''") + "'" for n in names)
-    params = {"$where": f"upper(nm) in ({quoted})", "$limit": 50000}
+PAGE_SIZE = 50000
+
+
+def fetch_from_api():
+    """Download the whole dataset from the Socrata (SODA) API, page by page.
+
+    The dataset is small, so we filter on our side. That avoids depending on
+    server-side query syntax and lets us suggest close matches when a name
+    isn't in the data.
+    """
     headers = {}
     token = os.environ.get("NYC_APP_TOKEN")
     if token:
         headers["X-App-Token"] = token
-    try:
-        resp = requests.get(API_URL, params=params, headers=headers, timeout=60)
-        resp.raise_for_status()
-    except requests.RequestException as exc:
-        sys.exit(
-            f"Could not fetch from the NYC Open Data API: {exc}\n"
-            f"Workaround: download the CSV from {DATASET_PAGE} "
-            f"(Export > CSV) and re-run with --csv path/to/file.csv"
-        )
-    return pd.DataFrame(resp.json())
+    rows, offset = [], 0
+    while True:
+        params = {"$limit": PAGE_SIZE, "$offset": offset, "$order": ":id"}
+        try:
+            resp = requests.get(API_URL, params=params, headers=headers, timeout=120)
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            sys.exit(
+                f"Could not fetch from the NYC Open Data API: {exc}\n"
+                f"Workaround: download the CSV from {DATASET_PAGE} "
+                f"(Export > CSV) and re-run with --csv path/to/file.csv"
+            )
+        page = resp.json()
+        rows.extend(page)
+        if len(page) < PAGE_SIZE:
+            break
+        offset += PAGE_SIZE
+    return pd.DataFrame(rows)
 
 
 def load_csv(path):
@@ -244,10 +259,26 @@ def plot_ethnicity(main_df, main, path_by_year, path_total):
 # --------------------------------------------------------------------------
 # Summary
 # --------------------------------------------------------------------------
+def suggest_names(all_df, names, gender):
+    """Explain a miss: show which similarly-spelled names do exist."""
+    pool = all_df if gender == "all" else all_df[all_df["gender"] == gender]
+    prefix = names[0][:3].lower()
+    near = sorted(n for n in pool["name"].unique() if n.lower().startswith(prefix))
+    print(f"\nNone of {names} appear in the data.")
+    if near:
+        print(f"Names in the data starting with '{names[0][:3]}': {near}")
+    else:
+        print(f"No names in the data start with '{names[0][:3]}'.")
+    print("Names with very few births are left out of this dataset, so a rare name "
+          "can be missing entirely.")
+
+
 def summarize(df, main):
     m = df[df["name"] == main]
     if m.empty:
-        print(f"\nNo rows for '{main}' in this data.")
+        print(f"\nNo rows for '{main}' in this data. The dataset leaves out names with "
+              "very few births, so it may fall below the reporting cutoff.")
+        print(f"Spellings that were found: {sorted(set(df['name']))}")
         return
     print(f"\n=== {main} in NYC ({df['year'].min()}-{df['year'].max()} in this data) ===")
     by_year = m.groupby("year")["count"].sum()
@@ -275,6 +306,8 @@ def main():
                    help="comma-separated similar spellings to compare")
     p.add_argument("--gender", default="F", choices=["F", "M", "all"])
     p.add_argument("--csv", help="use a downloaded CSV instead of calling the API")
+    p.add_argument("--refresh", action="store_true",
+                   help="re-download even if a cached download exists")
     p.add_argument("--out-dir", default="output")
     p.add_argument("--data-dir", default="data")
     a = p.parse_args()
@@ -284,18 +317,33 @@ def main():
     variants = [v for v in variants if v != main_name]
     names = [main_name] + variants
 
-    raw = load_csv(a.csv) if a.csv else fetch_from_api(names)
+    os.makedirs(a.out_dir, exist_ok=True)
+    os.makedirs(a.data_dir, exist_ok=True)
+    if a.csv:
+        raw = load_csv(a.csv)
+    else:
+        cache = os.path.join(a.data_dir, "raw_download.csv")
+        if os.path.exists(cache) and not a.refresh:
+            print(f"Using cached download {cache} (use --refresh to re-download).")
+            raw = load_csv(cache)
+        else:
+            print("Downloading the dataset from NYC Open Data...")
+            raw = fetch_from_api()
+            raw.to_csv(cache, index=False)
     if raw.empty:
-        sys.exit("The query returned no rows.")
-    df = clean(raw)
-    df = df[df["name"].isin(names)]
+        sys.exit(f"The dataset came back with no rows. Try downloading the CSV from "
+                 f"{DATASET_PAGE} (Export > CSV) and re-running with --csv.")
+    print(f"Loaded {len(raw)} rows. Columns: {list(raw.columns)}")
+
+    all_df = clean(raw)
+    print(f"Years in the data: {all_df['year'].min()}-{all_df['year'].max()}")
+    df = all_df[all_df["name"].isin(names)]
     if a.gender != "all":
         df = df[df["gender"] == a.gender]
     if df.empty:
-        sys.exit("No matching rows after filtering. Try --gender all or different spellings.")
+        suggest_names(all_df, names, a.gender)
+        sys.exit("\nNothing to chart. Try --gender all or other spellings via --variants.")
 
-    os.makedirs(a.out_dir, exist_ok=True)
-    os.makedirs(a.data_dir, exist_ok=True)
     df.to_csv(os.path.join(a.data_dir, "names_clean.csv"), index=False)
 
     plot_spellings(df, main_name, variants, os.path.join(a.out_dir, "spellings_by_year.png"))

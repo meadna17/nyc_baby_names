@@ -12,7 +12,8 @@ pip install -r requirements.txt
 python susannah_names.py
 ```
 
-This fetches the data from the NYC Open Data API, cleans it, and writes:
+This downloads the whole dataset from the NYC Open Data API (cached in `data/raw_download.csv`,
+use `--refresh` to re-download), cleans it, filters to Susannah and similar spellings, and writes:
 
 - `data/names_clean.csv`: the cleaned rows for Susannah and similar spellings
 - `output/spellings_by_year.png`: births per year, Susannah vs. Susanna, Susana, Suzanna, Suzannah
@@ -29,7 +30,9 @@ Optional: get a free app token from NYC Open Data and `export NYC_APP_TOKEN=...`
 
 - **No neighborhoods.** The dataset has only year, gender, ethnicity group, name, count, and rank.
   Neighborhood-level questions need a different source (see ideas below).
-- **Missing years are not zeros.** Names with very few births don't appear in some years.
+- **Missing years are not zeros.** Names with very few births don't appear in some years,
+  and a rare spelling may be missing entirely. If a name isn't found, the script lists the
+  similarly-spelled names that are.
 - **Ethnicity labels** changed across years; the script folds them into four groups
   (Asian & Pacific Islander, Black Non-Hispanic, Hispanic, White Non-Hispanic).
 - Ranks near a count of ~10 can swing from year to year (noted on the dataset page).
