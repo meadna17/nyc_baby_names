@@ -123,6 +123,18 @@ def per_100k(df, name, sex):
     return (mine / total * 100_000).dropna()
 
 
+def pooled_by_decade(df, name, sex):
+    """Per decade: babies on record, years listed, and pooled rate per 100,000."""
+    s = df[df["sex"] == sex].copy()
+    s["dec"] = (s["year"] // 10) * 10
+    total = s.groupby("dec")["count"].sum()
+    m = s[s["name"] == name]
+    babies = m.groupby("dec")["count"].sum()
+    years_listed = m.groupby("dec")["year"].nunique()
+    return pd.DataFrame({"babies": babies, "years_listed": years_listed,
+                         "per_100k": babies / total * 100_000}).dropna()
+
+
 def national_rank(df, name, sex):
     """Approximate rank by year (1 = most common), using counts within the sex."""
     s = df[df["sex"] == sex].copy()
@@ -163,19 +175,26 @@ def plot_spellings(nat, names, sex, path):
 
 
 def plot_vs_state(us, st, name, state, path):
+    years = range(int(min(us.index.min(), st.index.min())),
+                  int(max(us.index.max(), st.index.max())) + 1)
     fig, ax = new_fig(10, 5)
     for i, (label, series) in enumerate([("United States", us), (state.upper(), st)]):
-        ax.plot(series.index, series.values, color=SERIES_COLORS[i], linewidth=2, label=label)
-        ax.annotate(label, (series.index[-1], series.iloc[-1]), xytext=(6, 0),
+        # Years the name isn't listed stay blank, so lines break instead of
+        # drawing across them (unlisted means fewer than 5 births, not zero).
+        series = series.reindex(years)
+        ax.plot(series.index, series.values, color=SERIES_COLORS[i], linewidth=2, label=label,
+                marker="o", markersize=5 if i else 0, markeredgecolor=SURFACE, markeredgewidth=1)
+        last = series.dropna()
+        ax.annotate(label, (last.index[-1], last.iloc[-1]), xytext=(6, 0),
                     textcoords="offset points", color=INK, fontsize=9, va="center")
-    ax.set_xlim(min(us.index.min(), st.index.min()), max(us.index.max(), st.index.max()) + 12)
+    ax.set_xlim(min(years), max(years) + 12)
     ax.set_title(f"{name} per 100,000 girls born: US vs. {state.upper()}",
                  loc="left", color=INK, fontsize=13, fontweight="bold", pad=30)
     ax.set_ylabel("Per 100,000 girls", color=MUTED)
     ax.legend(frameon=False, labelcolor=INK, loc="lower left",
               bbox_to_anchor=(0, 1.0), ncol=2)
-    fig.text(0.01, 0.01, "Source: Social Security Administration. Rates use births recorded in "
-             "the files, which leave out names below the privacy cutoff.",
+    fig.text(0.01, 0.01, "Source: Social Security Administration. A gap means the name wasn't "
+             "listed that year (fewer than 5 births in the area), not zero.",
              color=MUTED, fontsize=8)
     fig.tight_layout(rect=(0, 0.03, 1, 1))
     fig.savefig(path, dpi=150, facecolor=SURFACE)
@@ -247,12 +266,21 @@ def main():
         else:
             plot_vs_state(us_rate, st_rate, name, a.state,
                           os.path.join(a.out_dir, "ssa_state_vs_us.png"))
-            yrs = [y for y in (1950, 1980, 2000, 2010, latest) if y in st_rate.index and y in us_rate.index]
-            print(f"\nPer 100,000 {a.sex} births, {a.state.upper()} vs. US:")
-            for y in yrs:
-                print(f"  {y}: {a.state.upper()} {st_rate[y]:.1f} | US {us_rate[y]:.1f}")
+            S = a.state.upper()
+            print(f"\nPer 100,000 {a.sex} births, {S} vs. US (single years):")
+            for y in (1950, 1980, 2000, 2010, latest):
+                us_txt = f"{us_rate[y]:.1f}" if y in us_rate.index else "not listed"
+                st_txt = f"{st_rate[y]:.1f}" if y in st_rate.index else "not listed (<5 births)"
+                print(f"  {y}: {S} {st_txt} | US {us_txt}")
+            us_d, st_d = pooled_by_decade(nat, name, a.sex), pooled_by_decade(st, name, a.sex)
+            print(f"\nBy decade, {S} vs. US (pooled per 100,000; 'yrs' = years the name was listed in {S}):")
+            for dec, r in st_d.iterrows():
+                us_txt = f"{us_d.loc[dec, 'per_100k']:.1f}" if dec in us_d.index else "n/a"
+                print(f"  {dec}s: {S} {int(r['babies'])} babies in {int(r['years_listed'])} yrs, "
+                      f"{r['per_100k']:.1f} per 100k | US {us_txt} per 100k")
+            print(f"({S} figures leave out years below the cutoff, so they can undercount.)")
             st_total = st[(st['sex'] == a.sex) & (st['name'] == name)]['count'].sum()
-            print(f"{a.state.upper()} total babies on record: {int(st_total):,}")
+            print(f"{S} total babies on record: {int(st_total):,}")
 
     print(f"\nCharts saved to {a.out_dir}/")
 
